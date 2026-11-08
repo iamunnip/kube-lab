@@ -1,0 +1,66 @@
+# Sets up the data disk:
+#
+#   /dev/sdb  ->  PV  ->  VG data_vg  ->  LV data_lv  ->  ext4  ->  /data
+#
+# Safe to run again: once the volume group exists, the disk is left alone.
+
+- name: Install the LVM tools (already in the box, so usually nothing changes)
+  ansible.builtin.apt:
+    name: lvm2
+    state: present
+
+# --- Safety checks, only before the first setup -----------------------------
+
+- name: Check if the volume group already exists
+  ansible.builtin.command: vgs {{ data_vg_name }}
+  register: vg_check
+  changed_when: false
+  failed_when: false      # "not found" is normal on a new VM
+
+- name: Look for anything already on the data disk
+  # wipefs --no-act only LISTS what is on the disk. It never deletes anything.
+  # Empty output means the disk is blank.
+  ansible.builtin.command: wipefs --no-act {{ data_disk_device }}
+  register: disk_contents
+  changed_when: false
+  when: vg_check.rc != 0
+
+- name: Stop if the data disk is not blank
+  ansible.builtin.fail:
+    msg: >-
+      {{ data_disk_device }} is not blank, so it will not be touched.
+      Found: {{ disk_contents.stdout }}.
+      Check data_disk_device in group_vars/all.yml.
+  when:
+    - vg_check.rc != 0
+    - disk_contents.stdout | length > 0
+
+# --- LVM ---------------------------------------------------------------------
+
+- name: Create the volume group {{ data_vg_name }} on {{ data_disk_device }}
+  community.general.lvg:
+    vg: "{{ data_vg_name }}"
+    pvs: "{{ data_disk_device }}"    # the whole disk becomes the physical volume
+
+- name: Create the logical volume {{ data_lv_name }} using all the space
+  community.general.lvol:
+    vg: "{{ data_vg_name }}"
+    lv: "{{ data_lv_name }}"
+    size: "{{ data_lv_size }}"
+    shrink: false                    # never make an existing volume smaller
+
+# --- Format, mount and fstab -------------------------------------------------
+
+- name: Format the logical volume as {{ data_fstype }}
+  # Only formats when there is no filesystem yet, so data is never wiped.
+  community.general.filesystem:
+    dev: /dev/{{ data_vg_name }}/{{ data_lv_name }}
+    fstype: "{{ data_fstype }}"
+
+- name: Mount it at {{ data_mount_point }} and add it to /etc/fstab
+  ansible.posix.mount:
+    path: "{{ data_mount_point }}"
+    src: /dev/{{ data_vg_name }}/{{ data_lv_name }}
+    fstype: "{{ data_fstype }}"
+    opts: "{{ data_mount_options }}"
+    state: mounted                   # mount it now AND write the line to /etc/fstab

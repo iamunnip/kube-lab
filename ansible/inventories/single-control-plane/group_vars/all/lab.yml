@@ -1,0 +1,69 @@
+# lab.yml
+#
+# How the lab is put together: login, disks, folders and file locations.
+# You rarely need to change these.
+
+# --- How Ansible logs in ----------------------------------------------------
+
+# The user Vagrant creates in every VM.
+ansible_user: vagrant
+
+# Interactive SSH sessions need Bash for command history and arrow keys.
+lab_login_shell: /bin/bash
+
+# The SSH key Vagrant made for each VM.
+#   playbook_dir       is the ansible/ folder
+#   vagrant_machine    is the VM name, set per host in hosts.ini, such as "node-1"
+# Do not use inventory_hostname here: with delegate_to it keeps the name of
+# the original VM, so Ansible would log in to the control plane with node-1's key.
+ansible_ssh_private_key_file: "{{ playbook_dir }}/../vagrant/single-control-plane/.vagrant/machines/{{ vagrant_machine }}/virtualbox/private_key"
+
+# The user on the control plane that gets a kubeconfig in ~/.kube/config.
+vm_kubectl_user: "{{ ansible_user }}"
+
+# --- Data disk ----------------------------------------------------------------
+
+# The empty 20 GB disk from the Vagrantfile. Seen as /dev/sdb on every VM.
+data_disk_device: /dev/sdb
+
+# Where the data disk is mounted.
+data_mount_point: /data
+
+# --- Kubernetes data folders on /data (made by the k8s_prepare role) --------
+# All Kubernetes data goes on the data disk, never on the 10 GB OS disk.
+
+k8s_containerd_dir: "{{ data_mount_point }}/containerd"   # kubeadm: containerd images and containers
+k8s_etcd_dir: "{{ data_mount_point }}/etcd"               # kubeadm: the etcd database (kubeadm makes it)
+k8s_rancher_dir: "{{ data_mount_point }}/rancher"         # RKE2: rke2_data_dir is inside it
+k8s_kubelet_dir: "{{ data_mount_point }}/kubelet"         # both: kubelet data and pod volumes
+k8s_storage_dir: "{{ data_mount_point }}/storage"         # both: app volumes (local storage) later
+
+# The folders k8s_prepare makes. /data/etcd is NOT in this list: kubeadm
+# makes it with the strict permissions (0700) etcd demands.
+k8s_data_dirs:
+  - "{{ k8s_containerd_dir }}"
+  - "{{ k8s_rancher_dir }}"
+  - "{{ k8s_kubelet_dir }}"
+  - "{{ k8s_storage_dir }}"
+
+# --- Files on the VMs -----------------------------------------------------------
+
+# Folder for the distro marker and the kubeadm config files.
+kube_lab_config_dir: /etc/kube-lab
+
+# --- Files on your computer ----------------------------------------------------
+
+# The admin kubeconfig, so you can run kubectl and helm on your computer.
+# The .kube/ folder is in .gitignore.
+kubeconfig_local_path: "{{ playbook_dir }}/../.kube/{{ cluster_name }}.conf"
+
+
+# --- Downloads from the internet ------------------------------------------------
+# Used for Helm and the RKE2 install script. GitHub can answer
+# "504 Gateway Time-out" for a while, so every download tries again.
+
+# How long to wait for an answer, in seconds.
+download_timeout: 60
+
+# How many times to try again after a failure, 30 seconds apart.
+download_retries: 5

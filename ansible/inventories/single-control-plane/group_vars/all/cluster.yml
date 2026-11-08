@@ -1,0 +1,52 @@
+# cluster.yml
+#
+# THE file to change what the lab installs.
+#
+#   1. Change a value below.
+#   2. Run:  cd ansible && ansible-playbook site.yml
+#
+# Install a new cluster:  set k8s_distro and the versions, run site.yml.
+# Upgrade:                raise a version, run site.yml again.
+# Switch distribution:    run reset.yml, change k8s_distro, run site.yml.
+#
+# The other files in this folder hold every other setting:
+#   os.yml       OS upgrade, data disk (LVM), kernel settings
+#   kubeadm.yml  containerd, packages, kubeadm config values, join tokens
+#   rke2.yml     RKE2 switches and config values
+#   cilium.yml   the Cilium Helm chart, Helm and the Cilium values
+#   lab.yml      SSH login, data disk name, folders, file locations
+
+# --- Which Kubernetes distribution ------------------------------------------
+
+# kubeadm  plain upstream Kubernetes, built step by step
+# rke2     SUSE Rancher's security focused Kubernetes
+k8s_distro: kubeadm
+
+# --- Versions -----------------------------------------------------------------
+
+# kubeadm: the Kubernetes version. Format "1.37.2".
+# Upgrades: one minor version at a time (1.37.x to 1.38.x), never down.
+kubernetes_version: "1.37.2"
+
+# RKE2: the RKE2 release. Format "v1.37.2+rke2r1".
+# Releases: https://github.com/rancher/rke2/releases
+rke2_version: "v1.37.2+rke2r1"
+
+# Cilium, the pod network, used with both distributions.
+# Releases: https://github.com/cilium/cilium/releases
+cilium_version: "1.20.4"
+
+# --- Cluster network -------------------------------------------------------------
+
+# The address kubectl and the nodes use to reach the Kubernetes API.
+# One control plane here, so it is control-plane's private IP.
+api_server_address: 192.168.56.10
+api_server_port: 6443
+
+# Address ranges inside the cluster, the same for both distributions.
+# They must not overlap the VM networks (192.168.56.0/24 and 10.0.2.0/24).
+pod_subnet: 10.244.0.0/16
+service_subnet: 10.96.0.0/12
+
+# The cluster's name. Also the kubeconfig file name on your computer.
+cluster_name: single-control-plane

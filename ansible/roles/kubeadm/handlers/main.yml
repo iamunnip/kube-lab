@@ -1,0 +1,6 @@
+# Handlers run only when a task asked for them with "notify".
+
+- name: Restart containerd
+  ansible.builtin.systemd_service:
+    name: containerd
+    state: restarted

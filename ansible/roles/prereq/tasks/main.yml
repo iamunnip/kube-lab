@@ -1,0 +1,21 @@
+# The prereq role: OS level basics every VM needs, in this order.
+# Run one part alone with a tag, for example:
+#   ansible-playbook prepare.yml --tags data_disk
+
+- name: Set the lab user's interactive login shell
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    shell: "{{ lab_login_shell }}"
+  tags: [shell]
+
+- name: Switch off the 2 GRUB services that fail on every boot on this box
+  ansible.builtin.import_tasks: grub.yml
+  tags: [grub]
+
+- name: Upgrade the OS packages
+  ansible.builtin.import_tasks: os_upgrade.yml
+  tags: [os_upgrade]
+
+- name: Set up the data disk (LVM, ext4, /data, fstab)
+  ansible.builtin.import_tasks: data_disk.yml
+  tags: [data_disk]

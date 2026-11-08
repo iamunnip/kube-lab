@@ -1,0 +1,86 @@
+# Upgrades the cluster when kubernetes_version in cluster.yml is higher than
+# what is installed. The official kubeadm upgrade order:
+#
+#   1. every VM:       new kubeadm package
+#   2. control plane:  kubeadm upgrade apply   (upgrades the control plane)
+#   3. nodes:          kubeadm upgrade node    (after the control plane)
+#   4. every VM:       new kubelet and kubectl packages, restart the kubelet
+#
+# Ansible runs each task on all VMs before the next task, so step 2 always
+# finishes on the control plane before step 3 starts on the nodes.
+#
+# Lab shortcut: nodes are not drained first. Pods keep running; only the
+# kubelet restarts. Real clusters drain each node before step 4.
+
+- name: Decide if an upgrade is needed
+  ansible.builtin.set_fact:
+    kubeadm_upgrade_needed: >-
+      {{ kubeadm_installed_version != ''
+         and kubeadm_installed_version != kubernetes_version }}
+
+- name: Stop if the new version is not allowed
+  ansible.builtin.assert:
+    that:
+      # No downgrades.
+      - kubernetes_version is version(kubeadm_installed_version, '>')
+      # At most one minor version up: 1.37.x -> 1.38.x is fine, 1.37 -> 1.39 is not.
+      - (kubernetes_version.split('.')[1] | int) - (kubeadm_installed_version.split('.')[1] | int) <= 1
+    fail_msg: >-
+      Cannot go from {{ kubeadm_installed_version }} to {{ kubernetes_version }}.
+      kubeadm only upgrades, one minor version at a time.
+    quiet: true
+  when: kubeadm_upgrade_needed
+
+- name: Show the upgrade that will happen
+  ansible.builtin.debug:
+    msg: "Upgrading {{ inventory_hostname }} from {{ kubeadm_installed_version }} to {{ kubernetes_version }}"
+  when: kubeadm_upgrade_needed
+
+# --- 1. New kubeadm on every VM ------------------------------------------------
+
+- name: Install the new kubeadm
+  ansible.builtin.apt:
+    name: kubeadm={{ kubernetes_version }}-*
+    update_cache: true
+    allow_change_held_packages: true   # kubeadm is held, allow this one change
+  when: kubeadm_upgrade_needed
+
+# --- 2. Control plane -------------------------------------------------------------
+
+- name: Upgrade the control plane with kubeadm upgrade apply (takes a few minutes)
+  ansible.builtin.command: kubeadm upgrade apply --yes v{{ kubernetes_version }}
+  when:
+    - kubeadm_upgrade_needed
+    - inventory_hostname in groups['control_plane']
+
+# --- 3. Nodes -----------------------------------------------------------------------
+
+- name: Upgrade the node's kubelet config with kubeadm upgrade node
+  ansible.builtin.command: kubeadm upgrade node
+  when:
+    - kubeadm_upgrade_needed
+    - inventory_hostname in groups['nodes']
+
+# --- 4. kubelet and kubectl on every VM ---------------------------------------------
+
+- name: Install the new kubelet and kubectl
+  ansible.builtin.apt:
+    name:
+      - kubelet={{ kubernetes_version }}-*
+      - kubectl={{ kubernetes_version }}-*
+    allow_change_held_packages: true
+  when: kubeadm_upgrade_needed
+
+- name: Restart the kubelet so it runs the new version
+  ansible.builtin.systemd_service:
+    name: kubelet
+    state: restarted
+    daemon_reload: true
+  when: kubeadm_upgrade_needed
+
+- name: Keep the packages held at the new version
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ kubernetes_packages }}"
+  when: kubeadm_upgrade_needed

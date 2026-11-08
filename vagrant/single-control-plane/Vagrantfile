@@ -1,0 +1,72 @@
+# Vagrantfile for the "single-control-plane" layout
+#
+# This file tells Vagrant to create 3 virtual machines (VMs) in VirtualBox:
+# 1 control plane and 2 nodes.
+#
+# Run every vagrant command from this folder: vagrant/single-control-plane/
+#
+#   control-plane : manages the cluster (the "brain")
+#   node-1        : runs your apps
+#   node-2        : runs your apps
+#
+# Every VM gets:
+#   - 3 CPUs and 6 GB of memory
+#   - the box's own OS disk (10 GB, not resized) and a separate 20 GB data disk
+#   - a private network card with a fixed IP
+#
+# Vagrant only creates the VMs. Kubernetes is installed later with Ansible.
+
+# The operating system image every VM starts from.
+# It is the official Ubuntu 26.04 cloud image, packaged for Vagrant.
+BOX = "cloud-image/ubuntu-26.04"
+
+# Size of the extra data disk for every VM.
+# The OS disk is not set here: every VM keeps the box's own 10 GB disk.
+DATA_DISK_SIZE = "20GB"   # empty extra disk, for storage experiments later
+
+# The list of VMs to create.
+# Each VM gets a fixed IP address so Ansible can always find it.
+NODES = [
+  { name: "control-plane", ip: "192.168.56.10", cpus: 3, memory: 6144 },
+  { name: "node-1",        ip: "192.168.56.11", cpus: 3, memory: 6144 },
+  { name: "node-2",        ip: "192.168.56.12", cpus: 3, memory: 6144 },
+]
+
+Vagrant.configure("2") do |config|
+  config.vm.box = BOX
+
+  # We do not need the shared /vagrant folder inside the VMs.
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  # Create one VM for each item in the NODES list.
+  NODES.each do |node|
+    config.vm.define node[:name] do |vm|
+      # The name you see inside the VM (run "hostname" to check).
+      vm.vm.hostname = node[:name]
+
+      # Network card 2: a private network card with a fixed IP.
+      # The VMs use it to talk to each other and to your computer.
+      # (Network card 1 is added by Vagrant automatically, for internet access.)
+      # nic_type "virtio" is a fast, modern virtual card. Without it VirtualBox
+      # picks an old emulated card (PCnet) that is slow and reports no link state.
+      vm.vm.network "private_network", ip: node[:ip], nic_type: "virtio"
+
+      # Disk 1, the OS disk, comes from the box (10 GB) and is not changed.
+      # Disk 2: an extra, empty data disk. Vagrant does not format or mount it.
+      vm.vm.disk :disk, name: "#{node[:name]}-data", size: DATA_DISK_SIZE
+
+      # VirtualBox settings: name, CPU and memory.
+      # The name includes the layout ("single") so it never clashes
+      # with VMs from another layout, such as the HA one.
+      vm.vm.provider "virtualbox" do |vb|
+        vb.name   = "kube-lab-single-#{node[:name]}"
+        vb.cpus   = node[:cpus]
+        vb.memory = node[:memory]
+
+        # Turn on the IO-APIC. The box ships with it off, and without it
+        # the VM can only use 1 CPU, no matter what "cpus" says.
+        vb.customize ["modifyvm", :id, "--ioapic", "on"]
+      end
+    end
+  end
+end

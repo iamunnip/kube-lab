@@ -1,0 +1,38 @@
+# The RKE2 agent: joins the server and runs your pods. It has its own
+# containerd and kubelet.
+
+- name: Read the join token from the server
+  ansible.builtin.slurp:
+    src: "{{ rke2_data_dir }}/server/node-token"
+  delegate_to: "{{ groups['control_plane'][0] }}"   # the token is on the control plane
+  register: rke2_token_file
+
+- name: Make the RKE2 config folder
+  ansible.builtin.file:
+    path: "{{ rke2_config_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the RKE2 agent config (templates/config-agent.yaml.j2)
+  ansible.builtin.template:
+    src: config-agent.yaml.j2
+    dest: "{{ rke2_config_dir }}/config.yaml"
+    mode: "0600"              # it holds the join token
+  vars:
+    rke2_token: "{{ rke2_token_file.content | b64decode | trim }}"
+  register: rke2_agent_config_file
+
+- name: Start the RKE2 agent now and at every boot
+  ansible.builtin.systemd_service:
+    name: rke2-agent
+    enabled: true
+    state: started
+
+- name: Restart the RKE2 agent after an upgrade or a config change
+  # Only on a VM where RKE2 was already installed. A new install was just started above.
+  ansible.builtin.systemd_service:
+    name: rke2-agent
+    state: restarted
+  when:
+    - rke2_installed_version != ''
+    - rke2_install_needed or rke2_agent_config_file is changed

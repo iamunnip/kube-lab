@@ -1,0 +1,55 @@
+# kubeadm init config. Managed by Ansible (kubeadm role). Do not edit on the VM.
+#
+# This is the real kubeadm config file, as kubeadm reads it:
+#   kubeadm init --config /etc/kube-lab/kubeadm-init.yaml
+# Only the values come from group_vars (the parts in double curly brackets). To change a value,
+# edit group_vars/all/*.yml. To add a kubeadm option, add it here.
+# Every field: https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta4/
+#
+# 3 parts, separated by "---".
+
+# --- Part 1: this control plane ---------------------------------------------
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+bootstrapTokens:
+  # kubeadm init always makes a token. kube-lab never uses it: each node gets
+  # its own (join.yml). No "token" field, so kubeadm makes a random one.
+  - description: "{{ kubeadm_init_token_description }}"
+    ttl: "{{ kubeadm_init_token_ttl }}"
+localAPIEndpoint:
+  advertiseAddress: "{{ ansible_host }}"          # this VM's private IP (hosts.ini)
+  bindPort: {{ api_server_port }}
+nodeRegistration:
+  name: "{{ inventory_hostname }}"
+  criSocket: "{{ containerd_socket }}"
+  kubeletExtraArgs:
+    - name: node-ip                              # use card 2 (private), not NAT
+      value: "{{ ansible_host }}"
+    - name: root-dir                             # pod data on the data disk
+      value: "{{ k8s_kubelet_dir }}"
+---
+# --- Part 2: the whole cluster ----------------------------------------------
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+clusterName: "{{ cluster_name }}"
+kubernetesVersion: "v{{ kubernetes_version }}"
+controlPlaneEndpoint: "{{ api_server_address }}:{{ api_server_port }}"
+networking:
+  podSubnet: "{{ pod_subnet }}"
+  serviceSubnet: "{{ service_subnet }}"
+proxy:
+  # true: no kube-proxy, Cilium handles Services (kubeProxyReplacement in cilium.yml).
+  disabled: {{ kubeadm_kube_proxy_disabled | bool | lower }}
+etcd:
+  local:
+    dataDir: "{{ k8s_etcd_dir }}"
+apiServer:
+  certSANs:
+{% for san in kubeadm_cert_sans %}
+    - "{{ san }}"
+{% endfor %}
+---
+# --- Part 3: the kubelet on every node --------------------------------------
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: "{{ kubeadm_cgroup_driver }}"

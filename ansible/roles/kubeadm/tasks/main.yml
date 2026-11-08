@@ -1,0 +1,37 @@
+# The kubeadm role: installs, or upgrades, plain Kubernetes with kubeadm.
+#
+#   every VM:        containerd, the kubeadm package repository
+#   new cluster:     install packages, kubeadm init (control plane),
+#                    kubeadm join (nodes)
+#   version changed: kubeadm upgrade, control plane first, then the nodes
+#   every VM:        write the "kubeadm" marker
+#
+# The pod network (Cilium) is installed after this role by the cilium role.
+# Run one part alone with a tag, for example:
+#   ansible-playbook site.yml --tags containerd
+
+- name: Install and set up containerd
+  ansible.builtin.import_tasks: containerd.yml
+  tags: [containerd]
+
+- name: Install kubeadm, kubelet and kubectl (new VMs only)
+  ansible.builtin.import_tasks: packages.yml
+  tags: [packages]
+
+- name: Create the cluster on the control plane (kubeadm init)
+  ansible.builtin.import_tasks: init.yml
+  when: inventory_hostname in groups['control_plane']
+  tags: [init]
+
+- name: Join node-1 and node-2 to the cluster (kubeadm join)
+  ansible.builtin.import_tasks: join.yml
+  when: inventory_hostname in groups['nodes']
+  tags: [join]
+
+- name: Upgrade Kubernetes if kubernetes_version changed
+  ansible.builtin.import_tasks: upgrade.yml
+  tags: [upgrade]
+
+- name: Write the marker that says kubeadm is installed
+  ansible.builtin.import_tasks: marker.yml
+  tags: [marker]

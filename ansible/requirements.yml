@@ -1,0 +1,19 @@
+# requirements.yml
+#
+# The Ansible collections (extra modules) the playbooks use.
+# Install them once on your computer:
+#
+#   cd ansible
+#   ansible-galaxy collection install -r requirements.yml
+#
+#   ansible.posix       mount, sysctl (prereq, k8s_prepare)
+#   community.general   modprobe, lvg, lvol, filesystem (prereq, k8s_prepare)
+#   kubernetes.core     helm, helm_repository (cilium role)
+
+collections:
+  - name: ansible.posix
+    version: ">=2.2.0"
+  - name: community.general
+    version: ">=13.0.0"
+  - name: kubernetes.core
+    version: ">=6.6.0"

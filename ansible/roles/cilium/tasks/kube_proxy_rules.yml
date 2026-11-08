@@ -1,0 +1,28 @@
+# Removes the firewall rules an old kube-proxy left on one node.
+# site.yml (step 4) runs this file twice per node: firewall_tool is
+# "iptables" (IPv4) and then "ip6tables" (IPv6).
+#
+# kube-proxy names all its rules "KUBE-...". After Cilium took over the
+# Services, those rules are dead weight. This follows Cilium's own
+# migration guide: save all rules, drop the KUBE lines, load the rest back.
+# Nothing happens when there are no kube-proxy rules (KUBE-SERVICES).
+
+- name: Read the node's {{ firewall_tool }} rules
+  ansible.builtin.command: "{{ firewall_tool }}-save"
+  register: kube_proxy_rules
+  changed_when: false
+
+- name: Back up the {{ firewall_tool }} rules on the data disk first
+  ansible.builtin.copy:
+    content: "{{ kube_proxy_rules.stdout }}\n"
+    dest: "{{ data_mount_point }}/kube-proxy-before-cilium-{{ firewall_tool }}.rules"
+    mode: "0600"
+    force: false            # keep the first backup, never overwrite it
+  when: "'KUBE-SERVICES' in kube_proxy_rules.stdout"
+
+- name: Load the rules back without the KUBE lines
+  # Every rule that is not from kube-proxy is kept as it is.
+  ansible.builtin.command:
+    cmd: "{{ firewall_tool }}-restore --wait 10"
+    stdin: "{{ kube_proxy_rules.stdout.splitlines() | reject('search', 'KUBE') | join('\n') }}\n"
+  when: "'KUBE-SERVICES' in kube_proxy_rules.stdout"

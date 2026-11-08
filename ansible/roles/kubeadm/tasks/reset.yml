@@ -1,0 +1,48 @@
+# Removes kubeadm Kubernetes from a VM. Used by reset.yml, not by site.yml.
+# reset.yml then reboots the VM and empties the /data folders.
+
+- name: Tear down the node with kubeadm reset
+  # Stops the cluster parts and removes the files kubeadm made.
+  ansible.builtin.command: kubeadm reset --force
+  failed_when: false        # keep going even if the cluster is half built
+
+- name: Stop the kubelet and containerd
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - kubelet
+    - "{{ containerd_package }}"
+  failed_when: false        # a service may not exist on a half built VM
+
+- name: Release the holds so the packages can be removed
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: install
+  loop: "{{ kubernetes_packages }}"
+  failed_when: false
+
+- name: Remove the Kubernetes packages and containerd
+  ansible.builtin.apt:
+    name: "{{ kubernetes_packages + [containerd_package] }}"
+    state: absent
+    purge: true             # also remove their config files
+    autoremove: true
+
+- name: Remove the Kubernetes package repository
+  ansible.builtin.deb822_repository:
+    name: kubernetes
+    state: absent
+
+- name: Remove kubeadm and containerd files outside /data
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/kubernetes
+    - /etc/containerd
+    - /etc/crictl.yaml
+    - /var/lib/kubelet
+    - /var/lib/containerd
+    - "/home/{{ vm_kubectl_user }}/.kube"

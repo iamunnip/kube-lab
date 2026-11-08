@@ -1,0 +1,119 @@
+# verify-network.yml
+#
+# Checks that the pod network and Services work without kube-proxy.
+#
+#   cd ansible
+#   ansible-playbook verify-network.yml
+#
+# What it does, in a new namespace that is always deleted at the end:
+#   1. starts a "client" pod on node-1 and an nginx "web" pod on node-2
+#   2. client -> web pod IP          (pod to pod across nodes, Cilium)
+#   3. client -> web Service name    (CoreDNS and a ClusterIP, Cilium eBPF)
+#   4. control plane -> node-1 NodePort  (a NodePort, Cilium eBPF)
+# Every check must print the nginx welcome page, or the playbook fails.
+- name: Verify networking without kube-proxy
+  hosts: control_plane
+  become: true
+  run_once: true
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  vars:
+    check_namespace: "kube-lab-netcheck-{{ ansible_facts.date_time.epoch }}"
+  tasks:
+    - name: Require two nodes for the cross-node check
+      ansible.builtin.assert:
+        that: groups['nodes'] | length >= 2
+        quiet: true
+
+    - name: Test cross-node networking and Services
+      block:
+        - name: Create temporary client, server and NodePort Service
+          ansible.builtin.command:
+            cmd: kubectl apply -f -
+            stdin: |
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: {{ check_namespace }}
+              ---
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: client
+                namespace: {{ check_namespace }}
+              spec:
+                nodeName: {{ groups['nodes'][0] }}
+                containers:
+                  - name: client
+                    image: busybox:1.37
+                    command: ["sleep", "600"]
+              ---
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: web
+                namespace: {{ check_namespace }}
+                labels:
+                  app: web
+              spec:
+                nodeName: {{ groups['nodes'][1] }}
+                containers:
+                  - name: web
+                    image: nginx:1.29
+              ---
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: web
+                namespace: {{ check_namespace }}
+              spec:
+                type: NodePort
+                selector:
+                  app: web
+                ports:
+                  - port: 80
+                    targetPort: 80
+
+        - name: Wait for the test pods
+          ansible.builtin.command: "kubectl -n {{ check_namespace }} wait --for=condition=Ready pod --all --timeout=180s"
+          changed_when: false
+
+        - name: Read the server pod IP
+          ansible.builtin.command: "kubectl -n {{ check_namespace }} get pod web -o jsonpath={.status.podIP}"
+          register: check_web_ip
+          changed_when: false
+
+        - name: Test direct pod HTTP across nodes
+          ansible.builtin.command: "kubectl -n {{ check_namespace }} exec client -- wget -q -O - -T 10 http://{{ check_web_ip.stdout }}"
+          register: check_direct
+          changed_when: false
+          failed_when: check_direct.rc != 0 or 'Welcome to nginx!' not in check_direct.stdout
+
+        - name: Test DNS and ClusterIP HTTP across nodes
+          ansible.builtin.command: "kubectl -n {{ check_namespace }} exec client -- wget -q -O - -T 10 http://web.{{ check_namespace }}.svc.cluster.local"
+          register: check_service
+          changed_when: false
+          failed_when: check_service.rc != 0 or 'Welcome to nginx!' not in check_service.stdout
+          retries: 6
+          delay: 5
+          until: check_service is succeeded
+
+        - name: Read the allocated NodePort
+          ansible.builtin.command: "kubectl -n {{ check_namespace }} get service web -o jsonpath={.spec.ports[0].nodePort}"
+          register: check_nodeport
+          changed_when: false
+
+        - name: Test NodePort HTTP from the control plane through node-1
+          ansible.builtin.command:
+            argv:
+              - python3
+              - -c
+              - "import urllib.request; print(urllib.request.urlopen('{{ check_url }}', timeout=10).read().decode())"
+          vars:
+            check_url: "http://{{ hostvars[groups['nodes'][0]].ansible_host }}:{{ check_nodeport.stdout }}"
+          register: check_external
+          changed_when: false
+          failed_when: check_external.rc != 0 or 'Welcome to nginx!' not in check_external.stdout
+      always:
+        - name: Remove the temporary namespace and all test resources
+          ansible.builtin.command: "kubectl delete namespace {{ check_namespace }} --ignore-not-found=true --wait=true --timeout=120s"

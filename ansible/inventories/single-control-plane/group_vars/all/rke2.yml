@@ -1,0 +1,71 @@
+# rke2.yml
+#
+# Settings for the rke2 role (used when k8s_distro is rke2).
+# The RKE2 version is in cluster.yml.
+
+# --- Simple switches --------------------------------------------------------------
+
+# Ingress controller RKE2 deploys for you:
+#   none           no ingress controller (install your own later)
+#   traefik        RKE2's default
+#   ingress-nginx  older controller, for migrations only
+rke2_ingress_controller: none
+
+# RKE2's built in service load balancer (gives LoadBalancer services an IP
+# on the nodes). RKE2 has it off by default.
+rke2_enable_servicelb: false
+
+# Packaged RKE2 components to leave out. Empty list means: install them all.
+# Allowed names: rke2-coredns, rke2-metrics-server, rke2-snapshot-controller,
+#   rke2-snapshot-controller-crd, rke2-snapshot-validation-webhook,
+#   rke2-security-responder, rke2-gateway-api-crd
+rke2_disable: []
+
+# Built in pod network. "none" because Cilium is installed with Helm by the
+# cilium role. Other choices: canal (RKE2's default), calico, cilium, flannel.
+rke2_cni: none
+
+# --- Install ------------------------------------------------------------------------
+
+# The CPU type of the VMs. The lab only runs on amd64 (x86_64).
+rke2_arch: amd64
+
+# The RKE2 tarball for rke2_version, from the RKE2 releases on GitHub.
+# urlencode turns the "+" in "v1.37.2+rke2r1" into "%2B", as GitHub needs.
+rke2_download_url: "https://github.com/rancher/rke2/releases/download/{{ rke2_version | urlencode }}/rke2.linux-{{ rke2_arch }}.tar.gz"
+
+# Where the tarball is saved for a moment, on the data disk.
+rke2_tarball_path: "{{ k8s_rancher_dir }}/rke2.linux-{{ rke2_arch }}.tar.gz"
+
+# Where RKE2 is unpacked. rke2 lands in <this>/bin, its services in <this>/lib/systemd/system.
+rke2_install_dir: /usr/local
+
+# RKE2 keeps everything (binaries, images, containers, etcd) here, on the data disk.
+rke2_data_dir: "{{ k8s_rancher_dir }}/rke2"
+
+# How long to wait for the first RKE2 server start (it writes the join token), in seconds.
+rke2_start_timeout: 600
+
+# Port the agents use to join the server (the Kubernetes API stays on api_server_port).
+rke2_supervisor_port: 9345
+
+# Who can read the admin kubeconfig RKE2 writes on the server.
+rke2_write_kubeconfig_mode: "0600"
+
+# Extra names and IPs the API server certificate is valid for.
+rke2_tls_san:
+  - "{{ api_server_address }}"
+  - "{{ groups['control_plane'][0] }}"
+
+# Extra kubelet flags on every node.
+rke2_kubelet_args:
+  - root-dir={{ k8s_kubelet_dir }}   # pod data on the data disk
+
+# kube-proxy: true means RKE2 does not start it, because Cilium does its job.
+# Must match cilium_kube_proxy_replacement in cilium.yml.
+rke2_disable_kube_proxy: true
+
+# The RKE2 config files themselves are in the role:
+#   roles/rke2/templates/config-server.yaml.j2   (control plane)
+#   roles/rke2/templates/config-agent.yaml.j2    (nodes)
+# The values above are what they use. To add an RKE2 option, add it there.

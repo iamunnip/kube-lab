@@ -1,0 +1,21 @@
+# Removes RKE2 from a VM. Used by reset.yml, not by site.yml.
+# reset.yml then reboots the VM and empties the /data folders.
+
+- name: Run RKE2's own uninstall script
+  # It stops RKE2, unmounts its folders and deletes its data-dir.
+  # RKE2_DATA_DIR tells it the data-dir is on /data, not the default place.
+  ansible.builtin.command: "{{ rke2_bin_dir }}/rke2-uninstall.sh"
+  environment:
+    RKE2_DATA_DIR: "{{ rke2_data_dir }}"
+  args:
+    removes: "{{ rke2_bin_dir }}/rke2-uninstall.sh"   # skip if RKE2 is already gone
+
+- name: Remove the files RKE2 or the lab left outside /data
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ rke2_bin_dir }}/kubectl"
+    - "{{ rke2_config_dir }}"
+    - /var/lib/kubelet
+    - "/home/{{ vm_kubectl_user }}/.kube"

@@ -1,0 +1,41 @@
+# Installs Helm on the control plane, in /data/helm/bin.
+# The kubernetes.core.helm module then runs "helm upgrade --install cilium".
+
+- name: Pick the Helm download for this CPU (amd64 or arm64)
+  ansible.builtin.set_fact:
+    helm_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture] }}"
+
+- name: Make the control plane's Helm folders
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ cilium_helm_dir }}"
+    - "{{ cilium_helm_dir }}/bin"
+    - "{{ cilium_helm_dir }}/tmp"
+
+- name: Download Helm {{ helm_version }}
+  ansible.builtin.get_url:
+    url: "https://get.helm.sh/helm-{{ helm_version }}-linux-{{ helm_arch }}.tar.gz"
+    dest: "{{ cilium_helm_dir }}/helm-{{ helm_version }}.tar.gz"
+    mode: "0600"
+    timeout: "{{ download_timeout }}"
+  # The internet can be slow for a moment: try again a few times.
+  register: helm_download
+  retries: "{{ download_retries }}"
+  delay: 30
+  until: helm_download is succeeded
+
+- name: Unpack Helm
+  ansible.builtin.unarchive:
+    src: "{{ cilium_helm_dir }}/helm-{{ helm_version }}.tar.gz"
+    dest: "{{ cilium_helm_dir }}"
+    remote_src: true          # the file is already on the VM
+
+- name: Put the helm program in /data/helm/bin
+  ansible.builtin.copy:
+    src: "{{ cilium_helm_dir }}/linux-{{ helm_arch }}/helm"
+    dest: "{{ cilium_helm_binary }}"
+    remote_src: true
+    mode: "0755"

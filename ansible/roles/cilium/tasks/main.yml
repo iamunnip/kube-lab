@@ -1,0 +1,57 @@
+# Runs over SSH on the first control plane, with the vagrant user's kubeconfig.
+
+- name: Check that /data is mounted before installing Helm
+  ansible.builtin.command: "mountpoint -q {{ data_mount_point }}"
+  changed_when: false
+
+- name: Install Helm on the control plane (/data/helm)
+  ansible.builtin.import_tasks: helm.yml
+
+- name: Write the Cilium values file (templates/values.yaml.j2, values from cilium.yml)
+  ansible.builtin.template:
+    src: values.yaml.j2
+    dest: "{{ cilium_values_file }}"
+    mode: "0600"
+
+- name: Add the Cilium Helm repository to the lab's own Helm setup
+  kubernetes.core.helm_repository:
+    binary_path: "{{ cilium_helm_binary }}"
+    name: "{{ cilium_helm_repo_name }}"
+    repo_url: "{{ cilium_helm_repo_url }}"
+  environment: "{{ lab_helm_env }}"   # use the control plane's lab Helm directory
+
+- name: Install Cilium {{ cilium_version }} with Helm (waits until it is running)
+  kubernetes.core.helm:
+    binary_path: "{{ cilium_helm_binary }}"
+    name: "{{ cilium_release_name }}"
+    chart_ref: "{{ cilium_chart }}"
+    chart_version: "{{ cilium_version }}"
+    release_namespace: "{{ cilium_namespace }}"
+    kubeconfig: "{{ cilium_kubeconfig_path }}"
+    values_files:
+      - "{{ cilium_values_file }}"
+    update_repo_cache: true           # refresh the lab's repository list only
+    wait: true
+    timeout: "{{ cilium_wait_timeout }}"
+  environment: "{{ lab_helm_env }}"
+
+- name: Enable and verify kube-proxy replacement before removing kube-proxy
+  ansible.builtin.import_tasks: kube_proxy_replacement.yml
+  when: cilium_kube_proxy_replacement | bool
+
+- name: Wait until every node is Ready
+  # A node becomes Ready once its pod network (Cilium) works.
+  ansible.builtin.command: >-
+    kubectl wait --for=condition=Ready nodes --all --timeout={{ cilium_wait_timeout }}
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  changed_when: false
+
+- name: Wait until the cluster's own apps are running (DNS, Cilium operator, and so on)
+  # Waits for every Deployment in kube-system, for example CoreDNS.
+  ansible.builtin.command: >-
+    kubectl -n kube-system wait --for=condition=Available deployment --all
+    --timeout={{ cilium_wait_timeout }}
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  changed_when: false

@@ -1,0 +1,14 @@
+# Writes /etc/kube-lab/distro, so the guard in site.yml knows RKE2 is
+# installed here and reset.yml knows what to remove.
+
+- name: Make the kube-lab config folder
+  ansible.builtin.file:
+    path: "{{ kube_lab_config_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the distro marker
+  ansible.builtin.copy:
+    dest: "{{ kube_lab_config_dir }}/distro"
+    content: "rke2\n"
+    mode: "0644"

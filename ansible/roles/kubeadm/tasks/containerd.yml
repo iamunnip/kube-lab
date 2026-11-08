@@ -1,0 +1,57 @@
+# containerd is the container runtime: the program that downloads images and
+# starts containers. kubeadm does not include one, so we install Ubuntu's.
+
+- name: Install containerd
+  ansible.builtin.apt:
+    name: "{{ containerd_package }}"
+    state: present
+    update_cache: true
+
+- name: Make the containerd config folder
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: "0755"
+
+- name: Write containerd's default config (only if there is no config yet)
+  # "containerd config default" prints the full default config.
+  # "creates" skips this task when the file already exists.
+  ansible.builtin.shell: containerd config default > /etc/containerd/config.toml
+  args:
+    creates: /etc/containerd/config.toml
+  notify: Restart containerd
+
+- name: Keep images and containers on the data disk
+  # root is where containerd stores everything. Default: /var/lib/containerd
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: "^root = .*$"
+    replace: "root = '{{ containerd_root_dir }}'"
+  notify: Restart containerd
+
+- name: Set the cgroup driver (containerd_systemd_cgroup in kubeadm.yml)
+  # Must match the kubelet: true for "systemd", false for "cgroupfs".
+  ansible.builtin.replace:
+    path: /etc/containerd/config.toml
+    regexp: "SystemdCgroup = (true|false)"
+    replace: "SystemdCgroup = {{ containerd_systemd_cgroup | bool | lower }}"
+  notify: Restart containerd
+
+- name: Start containerd now and at every boot
+  ansible.builtin.systemd_service:
+    name: containerd
+    state: started
+    enabled: true
+
+- name: Apply the config changes before Kubernetes starts
+  # Runs "Restart containerd" now if a task above changed the config.
+  ansible.builtin.meta: flush_handlers
+
+- name: Tell crictl (a debug tool for containers) where containerd is
+  ansible.builtin.copy:
+    dest: /etc/crictl.yaml
+    content: |
+      # Managed by Ansible (kubeadm role).
+      runtime-endpoint: {{ containerd_socket }}
+      image-endpoint: {{ containerd_socket }}
+    mode: "0644"

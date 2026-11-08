@@ -1,0 +1,31 @@
+# Kernel modules and settings that Kubernetes networking needs.
+# The files written here make them stay after a reboot.
+
+- name: Load the kernel modules now
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ kernel_modules }}"
+
+- name: Load the kernel modules at every boot
+  ansible.builtin.copy:
+    dest: "{{ kernel_modules_file }}"
+    content: |
+      # Managed by Ansible (k8s_prepare role). Kernel modules for Kubernetes.
+      {% for module in kernel_modules %}
+      {{ module }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Set the kernel settings now and at every boot
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: "{{ kernel_sysctl_file }}"   # the file that keeps them after a reboot
+    state: present
+    reload: true
+  loop: "{{ kernel_sysctls | dict2items }}"         # turns the list of settings into key and value pairs
+  loop_control:
+    label: "{{ item.key }} = {{ item.value }}"

@@ -1,0 +1,13 @@
+# Kubernetes expects swap to be off. By default the kubelet will not start
+# while swap is on. The cloud image has no swap, so this usually changes
+# nothing, but it keeps the role correct on other machines.
+
+- name: Turn off swap now
+  ansible.builtin.command: swapoff --all
+  when: ansible_facts.swaptotal_mb | int > 0     # only if there is any swap
+
+- name: Keep swap off after a reboot (comment out swap lines in /etc/fstab)
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s.*)$'     # a line that is not a comment and mentions swap
+    replace: '# \1'                    # put a # in front of it

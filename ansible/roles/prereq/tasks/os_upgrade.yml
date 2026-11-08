@@ -1,0 +1,22 @@
+# Brings the VM up to date with the latest Ubuntu packages.
+# It is the same as running "apt update" and then "apt dist-upgrade".
+
+- name: Update the package list and upgrade all packages
+  ansible.builtin.apt:
+    update_cache: true                  # apt update
+    upgrade: "{{ os_upgrade_type }}"    # apt dist-upgrade
+    autoremove: "{{ os_upgrade_autoremove }}"   # remove packages nothing needs any more
+    lock_timeout: "{{ apt_lock_timeout }}"      # wait if Ubuntu's own updater is busy
+
+- name: Check if Ubuntu asks for a reboot
+  ansible.builtin.stat:
+    path: /var/run/reboot-required      # Ubuntu creates this file when a reboot is needed
+  register: reboot_file
+
+- name: Reboot and wait for the VM to come back
+  ansible.builtin.reboot:
+    msg: "Reboot by Ansible after the OS upgrade"
+    reboot_timeout: "{{ os_reboot_timeout }}"
+  when:
+    - os_reboot_if_needed
+    - reboot_file.stat.exists
