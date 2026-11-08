@@ -1,0 +1,34 @@
+# RKE2 server config. Managed by Ansible (rke2 role). Do not edit on the VM.
+#
+# This is the real RKE2 config file, as RKE2 reads it:
+#   /etc/rancher/rke2/config.yaml
+# Only the values come from group_vars (the parts in double curly brackets).
+# To change a value, edit group_vars/all/*.yml. To add an RKE2 option, add it here.
+# Every option: https://docs.rke2.io/reference/server_config
+
+data-dir: "{{ rke2_data_dir }}"                # everything RKE2 keeps, on the data disk
+node-name: "{{ inventory_hostname }}"
+node-ip: "{{ ansible_host }}"                  # card 2 (private), not NAT
+advertise-address: "{{ ansible_host }}"
+tls-san:
+{% for san in rke2_tls_san %}
+  - "{{ san }}"
+{% endfor %}
+cluster-cidr: "{{ pod_subnet }}"
+service-cidr: "{{ service_subnet }}"
+cni: "{{ rke2_cni }}"                          # none: Cilium is installed by the cilium role
+disable-kube-proxy: {{ rke2_disable_kube_proxy | bool | lower }}
+ingress-controller:
+  - "{{ rke2_ingress_controller }}"
+enable-servicelb: {{ rke2_enable_servicelb | bool | lower }}
+disable:
+{% for component in rke2_disable %}
+  - "{{ component }}"
+{% else %}
+  []
+{% endfor %}
+kubelet-arg:
+{% for arg in rke2_kubelet_args %}
+  - "{{ arg }}"
+{% endfor %}
+write-kubeconfig-mode: "{{ rke2_write_kubeconfig_mode }}"

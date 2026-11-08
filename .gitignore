@@ -1,0 +1,14 @@
+# Vagrant state for each VM: VM IDs and private SSH keys (local only, secret)
+.vagrant/
+
+# kubeconfig files Ansible copies from the clusters (admin access, secret)
+.kube/
+
+# A local Helm setup on your computer (repository list and cache), never shared
+.helm/
+
+# Files Ansible writes when a playbook fails ("retry" lists of hosts)
+*.retry
+
+# Python cache files
+__pycache__/

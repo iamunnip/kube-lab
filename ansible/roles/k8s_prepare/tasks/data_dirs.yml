@@ -1,0 +1,28 @@
+# Makes the folders on the data disk where Kubernetes keeps its data.
+# The kubeadm and rke2 roles point their settings at these folders,
+# so container images and pod data never fill the 10 GB OS disk.
+
+- name: Check that the data disk is mounted at {{ data_mount_point }}
+  # findmnt prints the mount and exits with 0 only if something is mounted there.
+  ansible.builtin.command: findmnt --mountpoint {{ data_mount_point }}
+  register: data_mount_check
+  changed_when: false
+  failed_when: false
+
+- name: Stop if the data disk is not mounted (run the prereq role first)
+  ansible.builtin.fail:
+    msg: >-
+      Nothing is mounted at {{ data_mount_point }}. The folders would end up on the
+      OS disk. Run the prereq role first.
+  when: data_mount_check.rc != 0
+
+- name: Make the Kubernetes data folders (only the ones that are missing)
+  # No "mode" here on purpose: containerd and the kubelet set their own
+  # permissions on these folders when they start. Setting a mode here would
+  # undo that on every run. A new folder gets the normal 0755.
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+  loop: "{{ k8s_data_dirs }}"     # set in lab.yml

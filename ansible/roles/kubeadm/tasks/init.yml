@@ -1,0 +1,69 @@
+# Creates the cluster on the control plane with "kubeadm init".
+# Runs only once: if /etc/kubernetes/admin.conf exists, the cluster exists.
+
+- name: Check if the cluster already exists
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: admin_conf
+
+- name: Make the kube-lab config folder
+  ansible.builtin.file:
+    path: "{{ kube_lab_config_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the kubeadm init config file
+  # All settings for the new cluster in one file. Read it on the VM:
+  #   sudo cat /etc/kube-lab/kubeadm-init.yaml
+  ansible.builtin.template:
+    src: kubeadm-init.yaml.j2
+    dest: "{{ kube_lab_config_dir }}/kubeadm-init.yaml"
+    mode: "0600"
+
+- name: Check the config file is valid before using it
+  ansible.builtin.command: kubeadm config validate --config {{ kube_lab_config_dir }}/kubeadm-init.yaml
+  changed_when: false
+
+- name: Create the cluster with kubeadm init (takes 1 to 3 minutes)
+  ansible.builtin.command: kubeadm init --config {{ kube_lab_config_dir }}/kubeadm-init.yaml
+  when: not admin_conf.stat.exists
+  register: kubeadm_init
+
+- name: Show what kubeadm init did (without the lines that hold the token)
+  # kubeadm init prints a "kubeadm join ... --token ..." example at the end.
+  # kube-lab joins the nodes in its own way (join.yml), so those lines are left out.
+  ansible.builtin.debug:
+    msg: "{{ kubeadm_init.stdout_lines | reject('search', '--token|--discovery-token-ca-cert-hash|--certificate-key') | list }}"
+  when: kubeadm_init is changed
+
+# --- kubeconfig for the vagrant user and for your computer -------------------
+
+- name: Make the .kube folder for {{ vm_kubectl_user }}
+  ansible.builtin.file:
+    path: "/home/{{ vm_kubectl_user }}/.kube"
+    state: directory
+    owner: "{{ vm_kubectl_user }}"
+    group: "{{ vm_kubectl_user }}"
+    mode: "0700"
+
+- name: Let {{ vm_kubectl_user }} run kubectl on the control plane
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "/home/{{ vm_kubectl_user }}/.kube/config"
+    remote_src: true          # copy a file that is already on the VM
+    owner: "{{ vm_kubectl_user }}"
+    group: "{{ vm_kubectl_user }}"
+    mode: "0600"
+
+- name: Copy the kubeconfig to your computer
+  ansible.builtin.fetch:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ kubeconfig_local_path }}"
+    flat: true                # save to exactly this path
+
+- name: Make the kubeconfig on your computer private (it holds admin keys)
+  ansible.builtin.file:
+    path: "{{ kubeconfig_local_path }}"
+    mode: "0600"
+  delegate_to: localhost      # this task runs on your computer, not the VM
+  become: false

@@ -1,0 +1,68 @@
+# kubeadm.yml
+#
+# Settings for the kubeadm role (used when k8s_distro is kubeadm).
+# The Kubernetes version is in cluster.yml.
+
+# --- Packages -------------------------------------------------------------------
+
+# The minor version, worked out from kubernetes_version: "1.37.2" -> "1.37".
+kubernetes_minor_version: "{{ kubernetes_version.split('.')[0:2] | join('.') }}"
+
+# The official Kubernetes package repository for that minor version.
+kubernetes_apt_repo_url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_minor_version }}/deb/"
+kubernetes_apt_key_url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_minor_version }}/deb/Release.key"
+
+# The packages installed at kubernetes_version, and held there.
+kubernetes_packages:
+  - kubeadm
+  - kubelet
+  - kubectl
+
+# --- containerd -------------------------------------------------------------------
+
+# Ubuntu's containerd package.
+containerd_package: containerd
+
+# Where containerd keeps images and containers (on the data disk).
+containerd_root_dir: "{{ k8s_containerd_dir }}"
+
+# Use the systemd cgroup driver. Must match kubeadm_cgroup_driver below.
+containerd_systemd_cgroup: true
+
+# Where the kubelet, kubeadm and crictl talk to containerd.
+containerd_socket: unix:///run/containerd/containerd.sock
+
+# --- kubeadm config values -------------------------------------------------
+# The kubeadm config files themselves are in the role:
+#   roles/kubeadm/templates/kubeadm-init.yaml.j2   (control plane)
+#   roles/kubeadm/templates/kubeadm-join.yaml.j2   (nodes)
+# Below are only the values they use. Values shared with RKE2 (versions,
+# API address, subnets, folders) are in cluster.yml and lab.yml.
+
+# The kubelet cgroup driver. Must match containerd_systemd_cgroup above.
+kubeadm_cgroup_driver: systemd
+
+# Extra names and IPs the API server certificate is valid for.
+kubeadm_cert_sans:
+  - "{{ api_server_address }}"
+  - "{{ groups['control_plane'][0] }}"
+
+# true: kubeadm does not install kube-proxy, because Cilium does its job.
+# Must match kubeProxyReplacement in cilium.yml.
+kubeadm_kube_proxy_disabled: true
+
+# --- Join tokens -------------------------------------------------------------
+# A bootstrap token is a short password a new node uses once, to join.
+# After the join the node uses its own certificate, so the token is not
+# needed any more. Format of a time: "15m" (minutes), "1h" (hours).
+
+# kubeadm init always makes one token. kube-lab never uses it (each node gets
+# its own, below), so it lives only a short time and then Kubernetes deletes it.
+kubeadm_init_token_ttl: 15m
+kubeadm_init_token_description: kube-lab init token, not used
+
+# The token made for each node right before it joins. The kubeadm role
+# deletes it right after the join, so this is only a safety limit.
+# The node name is added at the end of the description.
+kubeadm_join_token_ttl: 10m
+kubeadm_join_token_description: kube-lab join token for

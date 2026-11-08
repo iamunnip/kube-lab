@@ -1,0 +1,49 @@
+# kubeadm, kubelet and kubectl come from the official Kubernetes package
+# repository, pkgs.k8s.io. Each minor version (1.37, 1.38 ...) has its own.
+#
+#   kubeadm  sets up the cluster (init on the control plane, join on nodes)
+#   kubelet  the agent on every node that starts the pods
+#   kubectl  the command line tool to talk to the cluster
+#
+# This file only INSTALLS on a new VM. Changing kubernetes_version later is
+# handled by upgrade.yml, because the order of an upgrade matters.
+
+- name: Add the Kubernetes {{ kubernetes_minor_version }} package repository
+  ansible.builtin.deb822_repository:
+    name: kubernetes
+    types: deb
+    uris: "{{ kubernetes_apt_repo_url }}"
+    suites: /
+    # The key that proves packages really come from the Kubernetes project.
+    signed_by: "{{ kubernetes_apt_key_url }}"
+
+- name: Check which kubeadm version is installed, if any
+  # Prints a version such as "1.37.2-1.1", or fails when kubeadm is not installed.
+  ansible.builtin.command: dpkg-query --show --showformat=${Version} kubeadm
+  register: kubeadm_package
+  changed_when: false
+  failed_when: false
+
+- name: Remember the installed version ("" when kubeadm is not installed)
+  ansible.builtin.set_fact:
+    # "1.37.2-1.1" -> "1.37.2"
+    kubeadm_installed_version: "{{ kubeadm_package.stdout.split('-')[0] if kubeadm_package.rc == 0 else '' }}"
+
+- name: Install {{ kubernetes_packages | join(', ') }} {{ kubernetes_version }}
+  ansible.builtin.apt:
+    # "kubeadm=1.37.2-*" means: version 1.37.2, with any package build number.
+    name: "{{ kubernetes_packages | map('regex_replace', '$', '=' ~ kubernetes_version ~ '-*') | list }}"
+    update_cache: true
+  when: kubeadm_installed_version == ""
+
+- name: Hold the versions, so "apt upgrade" never changes them by surprise
+  # Kubernetes is upgraded on purpose (upgrade.yml), never by the OS upgrade.
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ kubernetes_packages }}"
+
+- name: Enable the kubelet (kubeadm starts it with the right settings)
+  ansible.builtin.systemd_service:
+    name: kubelet
+    enabled: true

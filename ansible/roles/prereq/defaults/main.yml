@@ -1,0 +1,4 @@
+# The prereq role has no settings of its own here.
+# All settings are in inventories/<layout>/group_vars/all/
+#   os.yml   OS upgrade, GRUB, LVM names, filesystem
+#   lab.yml  data_disk_device, data_mount_point

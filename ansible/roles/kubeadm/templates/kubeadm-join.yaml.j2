@@ -1,0 +1,27 @@
+# kubeadm join config. Managed by Ansible (kubeadm role).
+#
+# This is the real kubeadm config file, as kubeadm reads it:
+#   kubeadm join --config /etc/kube-lab/kubeadm-join.yaml
+# Only the values come from group_vars (the parts in double curly brackets). To add a kubeadm
+# option, add it here.
+# Every field: https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta4/
+#
+# kubeadm_join_token and kubeadm_join_ca_hash are made by join.yml right
+# before the join. Ansible deletes this file after the join (it holds the token).
+
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: JoinConfiguration
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: "{{ api_server_address }}:{{ api_server_port }}"
+    token: "{{ kubeadm_join_token }}"
+    caCertHashes:
+      - "{{ kubeadm_join_ca_hash }}"
+nodeRegistration:
+  name: "{{ inventory_hostname }}"
+  criSocket: "{{ containerd_socket }}"
+  kubeletExtraArgs:
+    - name: node-ip                              # use card 2 (private), not NAT
+      value: "{{ ansible_host }}"
+    - name: root-dir                             # pod data on the data disk
+      value: "{{ k8s_kubelet_dir }}"

@@ -1,0 +1,14 @@
+# Writes /etc/kube-lab/distro, so other distro playbooks know kubeadm is
+# installed here and refuse to install on top of it.
+
+- name: Make the kube-lab config folder
+  ansible.builtin.file:
+    path: "{{ kube_lab_config_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the distro marker
+  ansible.builtin.copy:
+    dest: "{{ kube_lab_config_dir }}/distro"
+    content: "kubeadm\n"
+    mode: "0644"

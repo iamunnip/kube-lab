@@ -1,0 +1,58 @@
+# os.yml
+#
+# OS level settings, used by the prereq and k8s_prepare roles.
+
+# --- OS upgrade (prereq role) -----------------------------------------------
+
+# "dist" also installs new kernels and new package dependencies.
+# Other choices: "safe", "full", "yes" (see the apt module docs).
+os_upgrade_type: dist
+
+# Remove packages nothing needs any more after the upgrade.
+os_upgrade_autoremove: true
+
+# Reboot when Ubuntu says an update needs it (for example a new kernel).
+os_reboot_if_needed: true
+
+# How long to wait for a VM to come back after a reboot, in seconds.
+os_reboot_timeout: 600
+
+# How long apt waits if Ubuntu's own updater is busy, in seconds.
+apt_lock_timeout: 600
+
+# How long the playbooks wait for SSH after "vagrant up", in seconds.
+ssh_wait_timeout: 300
+
+# --- GRUB (prereq role) -------------------------------------------------------
+
+# On this box GRUB breaks /boot/grub/grubenv at every boot, so these two
+# services always fail. They are masked (switched off). Empty list: do nothing.
+grub_masked_services:
+  - grub2-common.service
+  - grub-initrd-fallback.service
+
+# --- Data disk LVM (prereq role) ----------------------------------------------
+# The disk itself (data_disk_device) and /data are set in lab.yml.
+
+data_vg_name: data_vg            # LVM volume group
+data_lv_name: data_lv            # LVM logical volume
+data_lv_size: 100%FREE           # how much of the volume group the LV uses
+data_fstype: ext4                # filesystem on the logical volume
+data_mount_options: defaults,nofail   # nofail: the VM still boots if the disk is missing
+
+# --- Kernel settings for Kubernetes (k8s_prepare role) ----------------------
+
+# Kernel modules loaded now and at every boot.
+kernel_modules:
+  - overlay          # the filesystem container images are built from
+  - br_netfilter     # lets the firewall see traffic that crosses Linux bridges
+
+kernel_modules_file: /etc/modules-load.d/kubernetes.conf
+
+# Kernel settings (sysctls) set now and at every boot.
+kernel_sysctls:
+  net.bridge.bridge-nf-call-iptables: 1    # bridged IPv4 traffic goes through iptables
+  net.bridge.bridge-nf-call-ip6tables: 1   # the same for IPv6
+  net.ipv4.ip_forward: 1                   # let the node pass traffic between pods
+
+kernel_sysctl_file: /etc/sysctl.d/99-kubernetes.conf

@@ -1,0 +1,12 @@
+# The kubeadm role has no settings of its own here.
+# The kubeadm config files themselves are in templates/ (kubeadm-init.yaml.j2,
+# kubeadm-join.yaml.j2). They only use values from group_vars.
+# All settings are in inventories/<layout>/group_vars/all/
+#   cluster.yml  kubernetes_version
+#   kubeadm.yml  packages, containerd, kubeadm config values, join tokens
+#   lab.yml      folders and file locations
+#
+# Only paths that kubeadm itself decides are kept here. Changing them would
+# not change where kubeadm reads or writes, so they are not settings.
+
+kubeadm_ca_cert_path: /etc/kubernetes/pki/ca.crt   # the cluster's certificate authority

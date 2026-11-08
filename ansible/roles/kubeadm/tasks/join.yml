@@ -1,0 +1,104 @@
+# Joins node-1 and node-2 to the cluster with "kubeadm join".
+# Runs only once per node: if /etc/kubernetes/kubelet.conf exists, it joined.
+#
+# How the join works, for each node that has not joined yet:
+#   1. The control plane makes a new bootstrap token that lives only a few
+#      minutes (kubeadm_join_token_ttl in kubeadm.yml).
+#   2. The control plane works out the CA hash: a fingerprint of the
+#      cluster's certificate authority, so the node knows it talks to the
+#      real control plane.
+#   3. The node gets kubeadm-join.yaml with the token and the hash, and runs
+#      "kubeadm join --config".
+#   4. Always, even if the join failed: the token is deleted on the control
+#      plane and kubeadm-join.yaml is deleted on the node. No secret is left.
+#
+# The token is a password for joining the cluster, so the tasks that
+# handle it have "no_log: true" (Ansible does not print it).
+
+- name: Check if this node already joined
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet.conf
+  register: kubelet_conf
+
+- name: Join this node to the cluster (skipped when it already joined)
+  when: not kubelet_conf.stat.exists
+  block:
+    # --- 1. A short lived join token -------------------------------------
+
+    - name: Make a join token on the control plane (deleted again below)
+      # Prints only the new token, for example: abcdef.0123456789abcdef
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - token
+          - create
+          - --ttl
+          - "{{ kubeadm_join_token_ttl }}"
+          - --description
+          - "{{ kubeadm_join_token_description }} {{ inventory_hostname }}"
+      delegate_to: "{{ groups['control_plane'][0] }}"   # run it on the control plane
+      register: kubeadm_token_create
+      no_log: true
+
+    - name: Remember the join token
+      ansible.builtin.set_fact:
+        kubeadm_join_token: "{{ kubeadm_token_create.stdout | trim }}"
+      no_log: true
+
+    # --- 2. The CA hash ----------------------------------------------------
+
+    - name: Work out the CA hash on the control plane
+      # The official way from the kubeadm docs: take the public key out of
+      # the CA certificate and print its sha256 fingerprint.
+      # The hash is not a secret: it only proves who the control plane is.
+      ansible.builtin.shell: |
+        set -o pipefail
+        openssl x509 -pubkey -noout -in {{ kubeadm_ca_cert_path }} \
+          | openssl pkey -pubin -outform der \
+          | openssl dgst -sha256 -r \
+          | cut -d ' ' -f 1
+      args:
+        executable: /bin/bash   # "set -o pipefail" needs Bash
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      register: kubeadm_ca_hash_output
+      changed_when: false
+
+    - name: Remember the CA hash
+      ansible.builtin.set_fact:
+        kubeadm_join_ca_hash: "sha256:{{ kubeadm_ca_hash_output.stdout | trim }}"
+
+    # --- 3. Join -----------------------------------------------------------
+
+    - name: Make the kube-lab config folder
+      ansible.builtin.file:
+        path: "{{ kube_lab_config_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write the kubeadm join config file
+      ansible.builtin.template:
+        src: kubeadm-join.yaml.j2
+        dest: "{{ kube_lab_config_dir }}/kubeadm-join.yaml"
+        mode: "0600"            # it holds the join token
+      diff: false               # never show the token, even with --diff
+
+    - name: Check the join config file is valid before using it
+      ansible.builtin.command: kubeadm config validate --config {{ kube_lab_config_dir }}/kubeadm-join.yaml
+      changed_when: false
+
+    - name: Join the cluster with kubeadm join (takes about a minute)
+      ansible.builtin.command: kubeadm join --config {{ kube_lab_config_dir }}/kubeadm-join.yaml
+
+  always:
+    # --- 4. Clean up, even after an error ----------------------------------
+
+    - name: Delete the join token on the control plane
+      ansible.builtin.command: kubeadm token delete {{ kubeadm_join_token }}
+      delegate_to: "{{ groups['control_plane'][0] }}"
+      when: kubeadm_join_token is defined
+      no_log: true
+
+    - name: Delete the join config file (it holds the token)
+      ansible.builtin.file:
+        path: "{{ kube_lab_config_dir }}/kubeadm-join.yaml"
+        state: absent

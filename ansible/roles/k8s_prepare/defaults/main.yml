@@ -1,0 +1,4 @@
+# The k8s_prepare role has no settings of its own here.
+# All settings are in inventories/<layout>/group_vars/all/
+#   os.yml   kernel modules and sysctls
+#   lab.yml  the /data folders (k8s_data_dirs)

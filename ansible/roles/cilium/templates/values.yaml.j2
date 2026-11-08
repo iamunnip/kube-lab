@@ -1,0 +1,30 @@
+# Helm values for Cilium. Managed by Ansible (cilium role). Do not edit on the VM.
+#
+# This is the real Helm values file, as Helm reads it:
+#   helm upgrade --install cilium cilium/cilium -f /data/helm/cilium-values.yaml
+# Only the values come from group_vars (the parts in double curly brackets).
+# To change a value, edit group_vars/all/cilium.yml. To add a Cilium option,
+# add it here.
+# Every option and its default:
+#   helm show values cilium/cilium --version <cilium_version>
+#   https://docs.cilium.io/en/stable/helm-reference/
+
+# Cilium handles Kubernetes Services using eBPF instead of kube-proxy.
+kubeProxyReplacement: {{ cilium_kube_proxy_replacement | bool | lower }}
+
+# Restart the Cilium agents when Helm changes their settings.
+rollOutCiliumPods: true
+
+# Reach the API directly at its real address, not the Service IP 10.96.0.1.
+# Without kube-proxy that Service IP only works once Cilium runs.
+k8sServiceHost: "{{ api_server_address }}"
+k8sServicePort: {{ api_server_port }}
+
+ipam:
+  # "kubernetes": pods get IPs from pod_subnet in cluster.yml.
+  # Cilium's own default (10.0.0.0/8) overlaps the VirtualBox NAT network
+  # 10.0.2.0/24, so it must not be used in this lab.
+  mode: "{{ cilium_ipam_mode }}"
+
+operator:
+  replicas: {{ cilium_operator_replicas }}

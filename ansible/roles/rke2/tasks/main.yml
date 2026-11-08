@@ -1,0 +1,28 @@
+# The rke2 role: installs, or upgrades, RKE2.
+#
+#   control plane:  RKE2 server
+#   nodes:          RKE2 agent, joined to the server
+#   every VM:       write the "rke2" marker
+#
+# Upgrade: raise rke2_version in cluster.yml and run site.yml again. The
+# server is upgraded first, then the agents, because of the task order.
+#
+# The pod network (Cilium) is installed after this role by the cilium role.
+
+- name: Check the installed RKE2 version, install the wanted one if needed
+  ansible.builtin.import_tasks: install.yml
+  tags: [install]
+
+- name: Install or upgrade the RKE2 server on the control plane
+  ansible.builtin.import_tasks: server.yml
+  when: inventory_hostname in groups['control_plane']
+  tags: [server]
+
+- name: Install or upgrade the RKE2 agent on node-1 and node-2
+  ansible.builtin.import_tasks: agent.yml
+  when: inventory_hostname in groups['nodes']
+  tags: [agent]
+
+- name: Write the marker that says rke2 is installed
+  ansible.builtin.import_tasks: marker.yml
+  tags: [marker]

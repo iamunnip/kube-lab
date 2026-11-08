@@ -1,0 +1,83 @@
+# site.yml
+#
+# THE playbook. Installs, or upgrades, the cluster described in
+#   inventories/single-control-plane/group_vars/all/cluster.yml
+#
+#   cd ansible
+#   ansible-playbook site.yml
+#
+# What it does:
+#   1. prepare.yml   get every VM ready (OS upgrade, /data, kernel settings)
+#   2. kubeadm or rke2 role, picked by k8s_distro in cluster.yml
+#   3. cilium role   install or upgrade the pod network with Helm,
+#                    which also replaces kube-proxy
+#   4. remove kube-proxy firewall rules left from an older cluster, if any
+#
+# Change a version in cluster.yml and run it again: that part is upgraded.
+# To switch distribution: run reset.yml, change k8s_distro, run site.yml.
+
+- name: Step 1, prepare every VM
+  ansible.builtin.import_playbook: prepare.yml
+
+- name: Step 2, install or upgrade the Kubernetes distribution from cluster.yml
+  hosts: cluster
+  become: true
+
+  pre_tasks:
+    - name: Check k8s_distro in cluster.yml is kubeadm or rke2
+      ansible.builtin.assert:
+        that: k8s_distro in ['kubeadm', 'rke2']
+        fail_msg: 'k8s_distro in cluster.yml must be "kubeadm" or "rke2", not "{{ k8s_distro }}".'
+        quiet: true
+
+    - name: Look for the marker that says which distribution is installed
+      ansible.builtin.slurp:
+        src: /etc/kube-lab/distro
+      register: distro_marker
+      failed_when: false          # no marker yet is normal on a new VM
+
+    - name: Stop if a different distribution is already installed
+      ansible.builtin.fail:
+        msg: >-
+          {{ inventory_hostname }} has {{ distro_marker.content | b64decode | trim }} installed,
+          but cluster.yml says k8s_distro: {{ k8s_distro }}.
+          Run "ansible-playbook reset.yml" first, then run site.yml again.
+      when:
+        - distro_marker.content is defined
+        - (distro_marker.content | b64decode | trim) != k8s_distro
+
+  roles:
+    - role: kubeadm
+      when: k8s_distro == 'kubeadm'
+    - role: rke2
+      when: k8s_distro == 'rke2'
+
+- name: Step 3, install or upgrade the Cilium pod network
+  hosts: control_plane
+  become: true
+  gather_facts: true
+  run_once: true
+  any_errors_fatal: true
+  roles:
+    - cilium
+
+# Only matters when an old cluster still had kube-proxy: its firewall rules
+# stay on each node until removed. A new cluster never had kube-proxy
+# (proxy.disabled in kubeadm.yml), so this finds nothing and changes nothing.
+- name: Step 4, remove old kube-proxy firewall rules after Cilium is verified
+  hosts: cluster
+  become: true
+  gather_facts: false
+  serial: 1                 # one node at a time
+  any_errors_fatal: true
+  tasks:
+    - name: Back up and remove old kube-proxy rules on this node
+      ansible.builtin.include_tasks: roles/cilium/tasks/kube_proxy_rules.yml
+      loop:
+        - iptables          # IPv4 rules
+        - ip6tables         # IPv6 rules
+      loop_control:
+        loop_var: firewall_tool
+      when:
+        - k8s_distro == 'kubeadm'
+        - cilium_kube_proxy_replacement | bool

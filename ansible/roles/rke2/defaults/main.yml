@@ -1,0 +1,14 @@
+# The rke2 role has no settings of its own here.
+# All settings are in inventories/<layout>/group_vars/all/
+#   cluster.yml  rke2_version
+#   rke2.yml     install, switches, RKE2 config values
+#
+# The RKE2 config files themselves are in templates/.
+#   lab.yml      folders and file locations
+#
+# Only paths that RKE2 itself decides are kept here. Changing them would not
+# change where RKE2 reads or writes, so they are not settings.
+
+rke2_config_dir: /etc/rancher/rke2          # RKE2 always reads config.yaml here
+rke2_kubeconfig_path: /etc/rancher/rke2/rke2.yaml   # RKE2 always writes the admin kubeconfig here
+rke2_bin_dir: /usr/local/bin                # the install script puts rke2 and its scripts here

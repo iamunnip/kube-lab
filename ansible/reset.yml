@@ -1,0 +1,95 @@
+# reset.yml
+#
+# Removes the Kubernetes distribution that is installed (kubeadm or rke2)
+# and all its data. Keeps the VMs, the OS upgrade, the /data disk and the
+# kernel settings, so site.yml can install again quickly.
+#
+#   cd ansible
+#   ansible-playbook reset.yml
+#
+# It asks you to type "yes" first. To skip the question:
+#   ansible-playbook reset.yml -e reset_confirm=yes
+
+- name: Remove the installed Kubernetes distribution
+  hosts: cluster
+  become: true
+
+  vars_prompt:
+    - name: reset_confirm
+      prompt: "This deletes the cluster and all its data in /data. Type yes to continue"
+      private: false
+
+  tasks:
+    - name: Stop unless you typed yes
+      ansible.builtin.assert:
+        that: reset_confirm == 'yes'
+        fail_msg: Nothing was changed.
+        quiet: true
+
+    - name: Look for the marker that says which distribution is installed
+      ansible.builtin.slurp:
+        src: /etc/kube-lab/distro
+      register: distro_marker
+      failed_when: false
+
+    - name: Remember which distribution is installed ("" when none)
+      ansible.builtin.set_fact:
+        installed_distro: "{{ (distro_marker.content | b64decode | trim) if distro_marker.content is defined else '' }}"
+
+    - name: Show what will be removed
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: removing '{{ installed_distro }}'{{ ' (nothing installed)' if installed_distro == '' else '' }}"
+
+    # --- 1. Remove the distribution with its own steps ---------------------
+
+    - name: Remove kubeadm Kubernetes
+      ansible.builtin.include_role:
+        name: kubeadm
+        tasks_from: reset
+      when: installed_distro == 'kubeadm'
+
+    - name: Remove RKE2
+      ansible.builtin.include_role:
+        name: rke2
+        tasks_from: reset
+      when: installed_distro == 'rke2'
+
+    # --- 2. Reboot: clears mounts, network interfaces and firewall rules ----
+
+    - name: Reboot so nothing from the old cluster is left running
+      ansible.builtin.reboot:
+        msg: "Reboot by Ansible after removing Kubernetes"
+        reboot_timeout: "{{ os_reboot_timeout }}"
+      when: installed_distro != ''
+
+    # --- 3. Empty the data folders and remove the leftovers -----------------
+
+    - name: Delete the Kubernetes data and the pod network files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ k8s_containerd_dir }}"
+        - "{{ k8s_etcd_dir }}"
+        - "{{ k8s_rancher_dir }}"
+        - "{{ k8s_kubelet_dir }}"
+        - /etc/cni            # pod network config (Cilium)
+        - /opt/cni            # pod network programs (Cilium)
+        - /var/lib/cni
+        - /etc/kube-lab       # the distro marker and kubeadm config files
+      when: installed_distro != ''
+
+    - name: Make the empty Kubernetes data folders again
+      ansible.builtin.include_role:
+        name: k8s_prepare
+        tasks_from: data_dirs
+
+- name: Forget the old cluster on your computer
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Delete the old kubeconfig
+      ansible.builtin.file:
+        path: "{{ kubeconfig_local_path }}"
+        state: absent

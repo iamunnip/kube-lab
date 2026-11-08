@@ -1,0 +1,20 @@
+# RKE2 agent config. Managed by Ansible (rke2 role). Do not edit on the VM.
+#
+# This is the real RKE2 config file, as RKE2 reads it:
+#   /etc/rancher/rke2/config.yaml
+# Only the values come from group_vars (the parts in double curly brackets).
+# To add an RKE2 option, add it here.
+# Every option: https://docs.rke2.io/reference/linux_agent_config
+#
+# rke2_token is read from the server by agent.yml. It is the join token,
+# so only root can read this file.
+
+server: "https://{{ api_server_address }}:{{ rke2_supervisor_port }}"
+token: "{{ rke2_token }}"
+data-dir: "{{ rke2_data_dir }}"                # everything RKE2 keeps, on the data disk
+node-name: "{{ inventory_hostname }}"
+node-ip: "{{ ansible_host }}"                  # card 2 (private), not NAT
+kubelet-arg:
+{% for arg in rke2_kubelet_args %}
+  - "{{ arg }}"
+{% endfor %}

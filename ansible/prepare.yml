@@ -1,0 +1,42 @@
+# prepare.yml
+#
+# Gets every VM ready for Kubernetes, in 2 steps:
+#
+#   1. prereq       OS level basics: GRUB fix, OS upgrade, data disk on /data
+#   2. k8s_prepare  Kubernetes basics: data folders on /data, swap off,
+#                   kernel modules and settings, /etc/hosts
+#
+# site.yml runs it first, before kubeadm or RKE2. It is safe to run again:
+# steps that are already done are skipped.
+#
+#   cd ansible
+#   ansible-playbook prepare.yml
+
+- name: Prepare every VM for Kubernetes
+  hosts: cluster
+  become: true          # run the tasks as root, with sudo
+  gather_facts: false   # wait for the VMs first (below), then gather facts
+
+  pre_tasks:
+    # Right after "vagrant up" a VM can need a moment before SSH on its
+    # private IP answers. Wait for it instead of failing.
+    - name: Wait until the VM answers over SSH (ssh_wait_timeout in os.yml)
+      ansible.builtin.wait_for_connection:
+        timeout: "{{ ssh_wait_timeout }}"
+
+    # raw does not need Ansible's remote temporary directory to exist.
+    - name: Create root's private Ansible temporary directory before using modules
+      ansible.builtin.raw: |
+        if [ ! -d /root/.ansible/tmp ]; then
+          install -d -m 0700 /root/.ansible/tmp
+          echo kube-lab-tmp-created
+        fi
+      register: root_ansible_tmp
+      changed_when: "'kube-lab-tmp-created' in root_ansible_tmp.stdout"
+
+    - name: Gather facts about the VM (OS, memory, disks and so on)
+      ansible.builtin.setup:
+
+  roles:
+    - prereq
+    - k8s_prepare

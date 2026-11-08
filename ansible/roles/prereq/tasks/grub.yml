@@ -1,0 +1,23 @@
+# The problem:
+#   On this box, GRUB (the boot loader) writes a broken /boot/grub/grubenv
+#   at every boot: the file starts with a stray byte. Two small services
+#   then fail at every boot, and systemd reports "degraded" instead of
+#   "running". Rewriting the file does not help: GRUB breaks it again at
+#   the next boot.
+#
+# What the two services do:
+#   They clear GRUB's "last boot failed" marker, which only matters for the
+#   boot menu on the VM's screen. Lab VMs are used over SSH, never from that
+#   screen, so nothing is lost when they are switched off.
+#
+# The fix:
+#   "Mask" the two services. Masked means systemd will never start them.
+#   The list is grub_masked_services in os.yml.
+#   Undo with: sudo systemctl unmask grub2-common.service grub-initrd-fallback.service
+
+- name: Switch off the two GRUB services that fail on every boot
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: true
+  loop: "{{ grub_masked_services }}"     # set in os.yml
+  notify: Clear old systemd failures

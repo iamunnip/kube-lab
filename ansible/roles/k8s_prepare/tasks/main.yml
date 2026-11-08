@@ -1,0 +1,20 @@
+# The k8s_prepare role: what every node needs before kubeadm or RKE2.
+# Run the prereq role first: this role needs /data to be mounted.
+# Run one part alone with a tag, for example:
+#   ansible-playbook prepare.yml --tags data_dirs
+
+- name: Make the Kubernetes data folders on /data
+  ansible.builtin.import_tasks: data_dirs.yml
+  tags: [data_dirs]
+
+- name: Turn off swap
+  ansible.builtin.import_tasks: swap.yml
+  tags: [swap]
+
+- name: Load kernel modules and set kernel settings
+  ansible.builtin.import_tasks: kernel.yml
+  tags: [kernel]
+
+- name: Add every node to /etc/hosts
+  ansible.builtin.import_tasks: hosts.yml
+  tags: [hosts]

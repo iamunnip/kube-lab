@@ -1,0 +1,10 @@
+# The lab's own Helm folders on the control plane: repositories, cache and
+# plugins. Worked out from cilium_helm_dir (cilium.yml), not a setting of its own.
+lab_helm_env:
+  HELM_CONFIG_HOME: "{{ cilium_helm_dir }}/config"
+  HELM_CACHE_HOME: "{{ cilium_helm_dir }}/cache"
+  HELM_DATA_HOME: "{{ cilium_helm_dir }}/share"
+  TMPDIR: "{{ cilium_helm_dir }}/tmp"
+  HELM_PLUGINS: "{{ cilium_helm_dir }}/share/plugins"
+  HELM_REPOSITORY_CONFIG: "{{ cilium_helm_dir }}/repositories.yaml"
+  HELM_REPOSITORY_CACHE: "{{ cilium_helm_dir }}/cache"

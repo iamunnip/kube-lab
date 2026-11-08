@@ -1,0 +1,37 @@
+# cilium.yml
+#
+# Settings for the cilium role: the pod network, installed with Helm from
+# the control plane. The Cilium version is in cluster.yml.
+
+# --- Helm chart ---------------------------------------------------------------------
+
+cilium_helm_repo_name: cilium
+cilium_helm_repo_url: https://helm.cilium.io/
+cilium_chart: "{{ cilium_helm_repo_name }}/cilium"
+cilium_release_name: cilium
+cilium_namespace: kube-system
+
+# How long to wait for Cilium, the nodes and the system apps to be ready.
+cilium_wait_timeout: 10m
+
+# Helm files and kubeconfig on the control plane.
+cilium_helm_dir: "{{ data_mount_point }}/helm"
+cilium_values_file: "{{ cilium_helm_dir }}/cilium-values.yaml"
+cilium_kubeconfig_path: "/home/{{ vm_kubectl_user }}/.kube/config"
+cilium_helm_binary: "{{ cilium_helm_dir }}/bin/helm"
+helm_version: v4.3.1
+
+# --- Cilium Helm values -------------------------------------------------------------
+# The values file itself is in the role: roles/cilium/templates/values.yaml.j2
+# Below are only the values it uses. The API address is in cluster.yml.
+
+# true: Cilium does kube-proxy's job, and kube-proxy is not installed.
+# Must match kubeadm_kube_proxy_disabled (kubeadm.yml) and disable-kube-proxy (rke2.yml).
+cilium_kube_proxy_replacement: true
+
+# How pods get their IPs. "kubernetes": from pod_subnet in cluster.yml.
+# Do not use Cilium's default "cluster-pool" (10.0.0.0/8 overlaps the NAT network).
+cilium_ipam_mode: kubernetes
+
+# How many Cilium operators run. One is enough for a small lab (the default is 2).
+cilium_operator_replicas: 1

@@ -1,0 +1,8 @@
+# Handlers run once, at the end of the play, and only when a task
+# asked for them with "notify".
+
+- name: Clear old systemd failures
+  # Forgets the failures recorded before the services were switched off,
+  # so "systemctl is-system-running" says "running".
+  ansible.builtin.command: systemctl reset-failed
+  changed_when: true

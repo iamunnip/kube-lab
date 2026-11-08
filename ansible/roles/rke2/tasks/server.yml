@@ -1,0 +1,85 @@
+# The RKE2 server: the control plane (API server, etcd, scheduler,
+# controller manager), plus its own containerd and kubelet.
+
+- name: Make the RKE2 config folder
+  ansible.builtin.file:
+    path: "{{ rke2_config_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Write the RKE2 server config (templates/config-server.yaml.j2)
+  # All server settings in one file. Read it on the VM:
+  #   sudo cat /etc/rancher/rke2/config.yaml
+  ansible.builtin.template:
+    src: config-server.yaml.j2
+    dest: "{{ rke2_config_dir }}/config.yaml"
+    mode: "0600"
+  register: rke2_server_config_file
+
+- name: Start the RKE2 server now and at every boot (first start takes a few minutes)
+  ansible.builtin.systemd_service:
+    name: rke2-server
+    enabled: true
+    state: started
+
+- name: Restart the RKE2 server after an upgrade or a config change
+  # Only on a VM where RKE2 was already installed. A new install was just started above.
+  ansible.builtin.systemd_service:
+    name: rke2-server
+    state: restarted
+  when:
+    - rke2_installed_version != ''
+    - rke2_install_needed or rke2_server_config_file is changed
+
+- name: Wait for the join token the agents need
+  ansible.builtin.wait_for:
+    path: "{{ rke2_data_dir }}/server/node-token"
+    timeout: "{{ rke2_start_timeout }}"
+
+- name: Make kubectl easy to use on the control plane
+  # RKE2 ships its own kubectl inside the data-dir.
+  ansible.builtin.file:
+    src: "{{ rke2_data_dir }}/bin/kubectl"
+    dest: "{{ rke2_bin_dir }}/kubectl"
+    state: link
+    force: true
+
+# --- kubeconfig for the vagrant user and for your computer -------------------
+
+- name: Make the .kube folder for {{ vm_kubectl_user }}
+  ansible.builtin.file:
+    path: "/home/{{ vm_kubectl_user }}/.kube"
+    state: directory
+    owner: "{{ vm_kubectl_user }}"
+    group: "{{ vm_kubectl_user }}"
+    mode: "0700"
+
+- name: Read the admin kubeconfig RKE2 wrote
+  ansible.builtin.slurp:
+    src: "{{ rke2_kubeconfig_path }}"
+  register: rke2_admin_kubeconfig
+
+- name: Make a copy that points at the control plane's IP
+  # RKE2 writes "server: https://127.0.0.1:6443", which only works on the VM
+  # itself. Your computer needs the control plane's private IP instead.
+  ansible.builtin.set_fact:
+    rke2_kubeconfig_content: >-
+      {{ rke2_admin_kubeconfig.content | b64decode
+         | replace('https://127.0.0.1:' ~ api_server_port,
+                   'https://' ~ api_server_address ~ ':' ~ api_server_port) }}
+
+- name: Let {{ vm_kubectl_user }} run kubectl on the control plane
+  ansible.builtin.copy:
+    content: "{{ rke2_kubeconfig_content }}"
+    dest: "/home/{{ vm_kubectl_user }}/.kube/config"
+    owner: "{{ vm_kubectl_user }}"
+    group: "{{ vm_kubectl_user }}"
+    mode: "0600"
+
+- name: Copy the kubeconfig to your computer
+  ansible.builtin.copy:
+    content: "{{ rke2_kubeconfig_content }}"
+    dest: "{{ kubeconfig_local_path }}"
+    mode: "0600"
+  delegate_to: localhost      # this task runs on your computer, not the VM
+  become: false

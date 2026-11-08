@@ -1,0 +1,73 @@
+# Enable and verify Cilium first so failed rollouts leave kube-proxy available.
+- name: Wait for every Cilium agent to finish rolling out
+  ansible.builtin.command: "kubectl -n kube-system rollout status daemonset/cilium --timeout={{ cilium_wait_timeout }}"
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  changed_when: false
+
+- name: List the Cilium agents
+  ansible.builtin.command: kubectl -n kube-system get pods -l k8s-app=cilium -o json
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  register: cilium_agents
+  changed_when: false
+
+- name: Verify kube-proxy replacement on every Cilium agent
+  ansible.builtin.command: "kubectl -n kube-system exec {{ item }} -- cilium-dbg status"
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  loop: "{{ (cilium_agents.stdout | from_json)['items'] | map(attribute='metadata.name') | list }}"
+  loop_control:
+    label: "{{ item }}"
+  register: cilium_agent_status
+  retries: 12
+  delay: 5
+  until: cilium_agent_status is succeeded
+  changed_when: false
+  failed_when: >-
+    cilium_agent_status.rc != 0 or
+    not (cilium_agent_status.stdout is search('KubeProxyReplacement:\s+True'))
+
+- name: Read the stored kubeadm configuration
+  ansible.builtin.command: kubectl -n kube-system get configmap kubeadm-config -o json
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  register: stored_kubeadm
+  changed_when: false
+  when: k8s_distro == 'kubeadm'
+
+- name: Keep kube-proxy disabled in kubeadm's stored cluster configuration
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - -n
+      - kube-system
+      - patch
+      - configmap
+      - kubeadm-config
+      - --type=merge
+      - -p
+      - "{{ {'data': {'ClusterConfiguration': (stored_cluster_config | combine({'proxy': {'disabled': true}}, recursive=true) | to_nice_yaml)}} | to_json }}"
+  vars:
+    stored_cluster_config: "{{ (stored_kubeadm.stdout | from_json).data.ClusterConfiguration | from_yaml }}"
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  when:
+    - k8s_distro == 'kubeadm'
+    - not (stored_cluster_config.proxy.disabled | default(false) | bool)
+
+- name: Remove the old kube-proxy DaemonSet and ConfigMap
+  ansible.builtin.command: kubectl -n kube-system delete daemonset,configmap kube-proxy --ignore-not-found=true
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  register: kube_proxy_removed
+  changed_when: "'deleted' in kube_proxy_removed.stdout"
+  when: k8s_distro == 'kubeadm'
+
+- name: Wait until kube-proxy pods are gone
+  ansible.builtin.command: kubectl -n kube-system wait --for=delete pod -l k8s-app=kube-proxy --timeout=180s
+  environment:
+    KUBECONFIG: "{{ cilium_kubeconfig_path }}"
+  changed_when: false
+  when: k8s_distro == 'kubeadm'
+

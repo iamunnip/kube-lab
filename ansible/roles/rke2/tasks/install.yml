@@ -1,0 +1,69 @@
+# Finds out which RKE2 version is installed (if any), then installs the
+# wanted version when needed. Same tarball for the server and the agents.
+#
+# No install script and no checksum file: Ansible downloads only the RKE2
+# tarball from GitHub and unpacks it into /usr/local. It holds:
+#   bin/rke2                       the rke2 program
+#   bin/rke2-killall.sh, bin/rke2-uninstall.sh
+#   lib/systemd/system/rke2-server.service, rke2-agent.service
+# RKE2 downloads its container images by itself when it starts.
+
+- name: Check which RKE2 version is installed, if any
+  # Prints a line like: rke2 version v1.37.2+rke2r1 (abc123)
+  ansible.builtin.command: "{{ rke2_bin_dir }}/rke2 --version"
+  register: rke2_version_output
+  changed_when: false
+  failed_when: false        # not installed yet is normal
+
+- name: Remember the installed version ("" when RKE2 is not installed)
+  ansible.builtin.set_fact:
+    rke2_installed_version: >-
+      {{ (rke2_version_output.stdout | regex_search('rke2 version (\S+)', '\1') | first)
+         if rke2_version_output.rc == 0 else '' }}
+
+- name: Decide if RKE2 must be installed or upgraded on this VM
+  ansible.builtin.set_fact:
+    rke2_install_needed: "{{ rke2_installed_version != rke2_version }}"
+
+- name: Show what will happen
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }}: installed "{{ rke2_installed_version }}",
+      wanted "{{ rke2_version }}", install needed: {{ rke2_install_needed }}
+
+- name: Stop if this would be a downgrade
+  ansible.builtin.assert:
+    that: rke2_version is version(rke2_installed_version, '>=')
+    fail_msg: "Cannot go from {{ rke2_installed_version }} down to {{ rke2_version }}. RKE2 only upgrades."
+    quiet: true
+  when: rke2_installed_version != ''
+
+- name: Download the RKE2 {{ rke2_version }} tarball
+  ansible.builtin.get_url:
+    url: "{{ rke2_download_url }}"
+    dest: "{{ rke2_tarball_path }}"
+    mode: "0600"
+    timeout: "{{ download_timeout }}"
+  when: rke2_install_needed
+  # GitHub can fail for a moment: try again a few times.
+  register: rke2_download
+  retries: "{{ download_retries }}"
+  delay: 30
+  until: rke2_download is succeeded
+
+- name: Unpack RKE2 into {{ rke2_install_dir }}
+  ansible.builtin.unarchive:
+    src: "{{ rke2_tarball_path }}"
+    dest: "{{ rke2_install_dir }}"
+    remote_src: true          # the file is already on the VM
+  when: rke2_install_needed
+
+- name: Tell systemd about the rke2-server and rke2-agent services
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: rke2_install_needed
+
+- name: Delete the downloaded tarball (RKE2 is unpacked now)
+  ansible.builtin.file:
+    path: "{{ rke2_tarball_path }}"
+    state: absent
