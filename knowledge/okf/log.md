@@ -1,6 +1,7 @@
 # Bundle update log
 
 ## 2026-11-08
+* **Update**: Tested [rke2](ansible/rke2.md) end to end on fresh VMs with the tarball install and the role templates: 3 nodes Ready, no kube-proxy, network check passed, rerun `changed=0`.
 * **Update**: The [rke2](ansible/rke2.md) role installs RKE2 from the release tarball only (no install script, no checksum file), for amd64 (`rke2_arch`). Downloads retry (`download_retries` in `lab.yml`).
 * **Update**: The [rke2](ansible/rke2.md) config files now live in the role's templates. `rke2.yml` holds only values.
 * **Update**: The [cilium](ansible/cilium.md) role only installs Helm in `/data/helm` and runs the install. Removed helm-diff, the key and checksum checks and the kubeconfig copy.
