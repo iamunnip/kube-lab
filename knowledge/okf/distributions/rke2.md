@@ -31,7 +31,7 @@ sources:
 | All settings           | `group_vars/all/rke2.yml`                                      |
 | Upgrade                | Raise `rke2_version`, run `site.yml`: new tarball unpacked, server first, then agents |
 | Remove                 | `reset.yml` (runs `rke2-uninstall.sh` with `RKE2_DATA_DIR`)    |
-| Tested                 | 2026-11-08: v1.37.1 install, upgrade to v1.37.2, reset         |
+| Tested                 | 2026-11-08: v1.37.1 install, upgrade to v1.37.2, reset (install script). Again on fresh VMs with the tarball install and the role templates: 3 nodes Ready on v1.37.2+rke2r1, no kube-proxy, `verify-network.yml` `failed=0`, rerun `changed=0` |
 
 # Learn more
 

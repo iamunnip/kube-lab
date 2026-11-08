@@ -44,7 +44,7 @@ sources:
 | etcd data            | `/data/etcd`                                                  |
 | Distro marker        | `/etc/kube-lab/distro` = `kubeadm`                            |
 | Tags                 | `containerd`, `packages`, `init`, `join`, `upgrade`, `marker` |
-| Tested               | 2026-11-08: 3 nodes Ready, second run `changed=0`. Join token steps tested on the live cluster: token made with a 10 minute TTL, CA hash matches kubeadm's, 0 kube-lab tokens left |
+| Tested               | 2026-11-08: 3 nodes Ready, second run `changed=0`. Again on fresh VMs with the role templates: init and join from `--config`, each join token deleted, `verify-network.yml` `failed=0`, rerun `changed=0`. Join token steps tested on the live cluster: token made with a 10 minute TTL, CA hash matches kubeadm's, 0 kube-lab tokens left |
 
 # Related
 

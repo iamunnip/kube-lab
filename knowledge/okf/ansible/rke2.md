@@ -21,7 +21,10 @@ sources:
 | Install              | Only the tarball `rke2.linux-amd64.tar.gz` from the GitHub release, unpacked into `/usr/local`. No install script, no checksum file |
 | Upgrade              | Runs when `rke2_version` differs from `rke2 --version`. Stops on a downgrade |
 | Reset tasks          | `tasks/reset.yml`, used by `reset.yml`                        |
+| Config files         | `templates/config-server.yaml.j2`, `templates/config-agent.yaml.j2`, values from `rke2.yml` |
+| CPU type             | `rke2_arch: amd64` only                                       |
 | Tags                 | `install`, `server`, `agent`, `marker`                        |
+| Tested               | 2026-11-08 on fresh VMs: tarball install of v1.37.2+rke2r1, 3 nodes Ready, no kube-proxy pods, Cilium `KubeProxyReplacement: True`, `verify-network.yml` `failed=0`, two more `site.yml` runs `changed=0` |
 
 # Learn more
 

@@ -226,6 +226,7 @@ ansible-playbook site.yml
 
 | What you see                                   | Why it happens                                    | What to do                                    |
 |------------------------------------------------|---------------------------------------------------|-----------------------------------------------|
+| `Download the RKE2 ... tarball` fails with `HTTP Error 504: Gateway Time-out` after 5 attempts | GitHub's release downloads fail now and then for scripts | Wait a few minutes. When `curl -fLo /dev/null <the URL>` works, run `site.yml` again. More tries: raise `download_retries` in `lab.yml` |
 | `has kubeadm installed, but cluster.yml says k8s_distro: rke2` | You skipped step 1                 | Run `reset.yml`, then `site.yml` again        |
 | `Cannot go from v1.37.2+rke2r1 down to ...`    | The version in `cluster.yml` is older than the installed one | Use the installed version or a newer one |
 | Helm: `resource DaemonSet/kube-system/cilium not ready` | Cilium agents could not reach the API | Check `roles/cilium/templates/values.yaml.j2` still has `k8sServiceHost` and `k8sServicePort` (see [Installing Kubernetes explained](../explanation/installing-kubernetes-explained.md)) |
